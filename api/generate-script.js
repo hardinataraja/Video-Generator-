@@ -1,12 +1,13 @@
 // File: api/generate-script.js
-// Menggunakan OpenAI GPT untuk menghasilkan naskah.
+// Menggunakan OpenRouter untuk menghasilkan naskah.
 
 export const config = {
     runtime: 'edge', 
 };
 
-// --- ENDPOINT RESMI OPENAI CHAT COMPLETION ---
-const SCRIPT_API_ENDPOINT = 'https://api.openai.com/v1/chat/completions'; 
+// --- ENDPOINT RESMI OPENROUTER CHAT COMPLETION ---
+const SCRIPT_API_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions'; 
+const APP_NAME = 'video-generator-sable.vercel.app'; // Ganti dengan domain Vercel Anda yang sebenarnya
 
 // Tentukan peran untuk 4 adegan
 const SCENE_ROLES = [
@@ -21,10 +22,14 @@ export default async function handler(request) {
         return new Response(JSON.stringify({ error: 'Hanya metode POST yang diizinkan.' }), { status: 405 });
     }
 
-    // Ganti GEMINI_API_KEY dengan OPENAI_API_KEY di Edge Function Anda
-    const OPENAI_API_KEY = process.env.OPENAI_API_KEY; 
-    if (!OPENAI_API_KEY) {
-        return new Response(JSON.stringify({ error: 'Kunci API OpenAI tidak ditemukan.' }), { status: 500 });
+    // Variabel kunci API untuk OpenRouter (gunakan nama variabel Vercel yang Anda buat)
+    const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY; 
+    
+    // Jika Anda masih menggunakan OPENAI_API_KEY di Vercel, ganti baris di atas
+    // menjadi: const OPENROUTER_API_KEY = process.env.OPENAI_API_KEY;
+    
+    if (!OPENROUTER_API_KEY) {
+        return new Response(JSON.stringify({ error: 'Kunci API OpenRouter tidak ditemukan.' }), { status: 500 });
     }
     
     const { productName, vibe } = await request.json();
@@ -33,7 +38,7 @@ export default async function handler(request) {
         return new Response(JSON.stringify({ error: 'Input productName dan vibe wajib diisi.' }), { status: 400 });
     }
 
-    // --- STRUKTUR PROMPT UNTUK OPENAI GPT ---
+    // --- STRUKTUR PROMPT UNTUK OPENROUTER GPT ---
     const promptText = `
         Buat naskah Voice Over iklan produk UGC (User-Generated Content) untuk media sosial.
         Naskah harus berbahasa Indonesia yang santai, persuasif, dan singkat (maksimal 30 detik total).
@@ -54,10 +59,13 @@ export default async function handler(request) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+                // HEADER WAJIB UNTUK OPENROUTER
+                'HTTP-Referer': APP_NAME, 
             },
             body: JSON.stringify({
-                model: 'gpt-4o', // Model yang direkomendasikan untuk instruksi yang kompleks
+                // PILIH MODEL DARI OPENROUTER. Gunakan model cepat dan murah untuk tes.
+                model: 'openai/gpt-3.5-turbo', 
                 messages: [{ 
                     role: "system", 
                     content: "Anda adalah penulis naskah iklan UGC yang profesional. Jawab hanya dengan naskah 4 bagian yang dipisahkan oleh double newline."
@@ -71,16 +79,21 @@ export default async function handler(request) {
 
         const data = await response.json();
         
-        // Ekstraksi Teks dari respons OpenAI
+        // Cek jika OpenRouter mengembalikan error (misalnya, kredit habis)
+        if (data.error) {
+             return new Response(JSON.stringify({ 
+                 error: 'Gagal menghasilkan naskah dari OpenRouter API.', 
+                 details: data.error.message 
+             }), { status: 500 });
+        }
+        
+        // Ekstraksi Teks (sama seperti OpenAI)
         const generatedText = data.choices?.[0]?.message?.content;
 
         if (!generatedText) {
-             return new Response(JSON.stringify({ error: 'Gagal menghasilkan naskah dari OpenAI API.', details: data }), {
-                status: 500,
-            });
+             return new Response(JSON.stringify({ error: 'Respons OpenRouter tidak valid.' }), { status: 500 });
         }
 
-        // Kirim naskah kembali ke client-side JavaScript
         return new Response(JSON.stringify({ 
             script: generatedText,
         }), {
@@ -89,7 +102,7 @@ export default async function handler(request) {
         });
 
     } catch (error) {
-        console.error('Error saat memanggil OpenAI GPT:', error);
+        console.error('Error saat memanggil OpenRouter GPT:', error);
         return new Response(JSON.stringify({ error: 'Terjadi kesalahan internal saat memproses AI.', details: error.message }), {
             status: 500,
             headers: { 'Content-Type': 'application/json' },
