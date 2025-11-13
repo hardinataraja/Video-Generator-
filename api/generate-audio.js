@@ -1,69 +1,83 @@
 // File: api/generate-audio.js
-// Ini adalah Vercel Edge Function untuk Generate Audio Voice Over
+// Menggunakan ElevenLabs untuk menghasilkan audio TTS.
 
 export const config = {
     runtime: 'edge', 
-    // TTS bisa memerlukan waktu, terutama jika antrean API sedang ramai
-    maxDuration: 20, 
 };
 
-// URL API TTS (Ganti dengan endpoint Anda yang sebenarnya, misalnya Google TTS atau ElevenLabs)
-const TTS_API_ENDPOINT = 'https://api.ttsservice.com/v1/synthesis'; 
+// --- KONFIGURASI ELEVENLABS ---
+// Ganti dengan ID suara yang Anda pilih (misalnya, suara wanita Bahasa Indonesia)
+// Anda dapat menemukan ID suara di dasbor ElevenLabs Anda.
+const ELEVENLABS_VOICE_ID = '21m00Tcm4oosS8AJzR88'; // Contoh Voice ID
+const TTS_API_ENDPOINT = `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`;
 
 export default async function handler(request) {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Hanya metode POST yang diizinkan.' }), { status: 405 });
     }
 
-    const TTS_API_KEY = process.env.TTS_API_KEY;
+    const TTS_API_KEY = process.env.TTS_API_KEY; 
+    
     if (!TTS_API_KEY) {
-        return new Response(JSON.stringify({ error: 'Kunci API TTS tidak ditemukan.' }), { status: 500 });
+        return new Response(JSON.stringify({ error: 'Kunci API ElevenLabs (TTS_API_KEY) tidak ditemukan.' }), { status: 500 });
     }
     
-    // Ambil naskah lengkap dari body request
     const { fullScript } = await request.json();
 
     if (!fullScript) {
-        return new Response(JSON.stringify({ error: 'Naskah lengkap (fullScript) wajib diisi.' }), { status: 400 });
+        return new Response(JSON.stringify({ error: 'Naskah (fullScript) wajib diisi.' }), { status: 400 });
     }
-
-    // --- Konfigurasi API TTS ---
-    // Konfigurasi ini sangat penting untuk memastikan suara yang dihasilkan konsisten dan dalam Bahasa Indonesia
-    const payload = {
-        text: fullScript,
-        // Contoh spesifikasi suara (Ganti dengan kode suara yang sesuai di API Anda)
-        voice: 'id-ID-Standard-A', // Misalnya, suara standar Bahasa Indonesia
-        model: 'high-quality',
-        format: 'mp3',
-        speed: 1.0, // Kecepatan normal
-    };
 
     try {
         const response = await fetch(TTS_API_ENDPOINT, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${TTS_API_KEY}`,
+                // Header otorisasi wajib ElevenLabs
+                'xi-api-key': TTS_API_KEY, 
+                // Accept header untuk menentukan format biner yang diharapkan
+                'Accept': 'audio/mp3' 
             },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({
+                text: fullScript, 
+                // Gunakan model yang mendukung suara yang Anda pilih. 
+                // Model 'eleven_multilingual_v2' sering digunakan untuk Bahasa Indonesia.
+                model_id: 'eleven_multilingual_v2', 
+                voice_settings: {
+                    stability: 0.5,
+                    similarity_boost: 0.5,
+                },
+            }),
         });
 
-        const data = await response.json();
-        
-        // Asumsi API mengembalikan URL file audio yang dapat diakses publik
-        const audioUrl = data.url;
-
-        if (!audioUrl) {
-             return new Response(JSON.stringify({ error: 'Gagal menghasilkan audio dari API.', details: data }), { status: 500 });
+        // --- HANDLING RESPON BINARY (MP3) ---
+        if (!response.ok) {
+            const errorBody = await response.json();
+            return new Response(JSON.stringify({ 
+                error: 'Gagal menghasilkan audio dari ElevenLabs.', 
+                details: errorBody.detail || 'API error',
+            }), {
+                status: response.status,
+                headers: { 'Content-Type': 'application/json' },
+            });
         }
-
-        // Kirim URL audio yang dihasilkan kembali ke client-side
-        return new Response(JSON.stringify({ audioUrl: audioUrl }), { status: 200 });
+        
+        // Mengembalikan respons biner (audio/mp3) langsung ke client
+        return new Response(response.body, {
+            status: 200,
+            headers: {
+                // Header ini PENTING agar browser tahu bahwa ini adalah file audio
+                'Content-Type': 'audio/mp3', 
+                // Memungkinkan CORS
+                'Access-Control-Allow-Origin': '*', 
+            },
+        });
 
     } catch (error) {
-        console.error('Error saat memanggil API TTS:', error);
-        return new Response(JSON.stringify({ error: 'Kesalahan internal saat memproses AI Audio.', details: error.message }), { status: 500 });
+        console.error('Error saat memanggil ElevenLabs:', error);
+        return new Response(JSON.stringify({ error: 'Terjadi kesalahan internal saat memproses AI.', details: error.message }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+        });
     }
 }
-
-
