@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI UGC Video Generator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="container">
+        <h1>🎬 AI UGC Video Generator</h1>
+        
+        <section id="input-section" class="card">
+            <h2>Masukkan Detail Produk</h2>
+            <form id="generator-form">
+                
+                <div class="form-group">
+                    <label for="product-name">Nama Produk:</label>
+                    <input type="text" id="product-name" required placeholder="Contoh: 'Sepatu Lari Ultra-Nyaman'">
+                </div>
+
+                <div class="form-group">
+                    <label for="vibe">Pilih Suasana (Vibe):</label>
+                    <select id="vibe" required>
+                        <option value="Fun and Energetic">Ceria dan Energik</option>
+                        <option value="Luxury and Calm">Mewah dan Tenang</option>
+                        <option value="Problem Solver">Pemecah Masalah</option>
+                    </select>
+                </div>
+                
+                <div class="form-group file-group">
+                    <label for="product-image">Gambar Produk (Close-up):</label>
+                    <input type="file" id="product-image" accept="image/*" required>
+                </div>
+
+                <div class="form-group file-group">
+                    <label for="model-image">Gambar Model Menggunakan Produk:</label>
+                    <input type="file" id="model-image" accept="image/*" required>
+                </div>
+
+                <button type="submit" id="generate-button">1. Generate Aset Dasar (Naskah & Gambar)</button>
+            </form>
+        </section>
+        
+        <hr>
+
+        <section id="results-section">
+            <h2>Aset Video UGC (Rasio 9:16)</h2>
+            <div id="scene-container" class="scene-grid">
+                </div>
+            
+            <div id="audio-container" class="card hidden">
+                <h3>Audio Voice Over Lengkap</h3>
+                <audio id="voice-over-audio" controls></audio>
+                <p>Naskah Lengkap:</p>
+                <blockquote id="full-script-text"></blockquote>
+                <button class="download-asset-btn" data-asset-type="audio" disabled>⬇️ Unduh Audio</button>
+            </div>
+        </section>
+
+    </div>
+
+    <script src="script.js" defer></script> 
+</body>
+</html>
