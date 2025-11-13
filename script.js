@@ -31,7 +31,7 @@ const appState = {
     
     // Data Audio
     fullScript: '',
-    audioUrl: null,
+    audioUrl: null, // Sekarang akan menyimpan URL Blob (untuk ElevenLabs)
 };
 
 // Endpoints Edge Function Vercel
@@ -74,6 +74,7 @@ function readFileAsDataURL(file) {
  * Fungsi untuk mengunduh asset
  */
 function handleDownload(url, filename) {
+    // Penting: Jika URL adalah Blob URL, ini akan mengunduh konten Blob.
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
@@ -156,25 +157,32 @@ async function generateScriptFromAI() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ productName: appState.productName, vibe: appState.vibe }),
         });
-        const result = await response.json();
-
-        if (response.status !== 200 || result.error) {
-            throw new Error(result.error || 'Gagal terhubung ke Edge Function Script.');
-        }
         
-        const generatedText = result.script;
-        const scriptParts = generatedText.trim().split('\n\n').filter(s => s.trim() !== '');
+        // Cek jika response adalah JSON error
+        if (response.headers.get('content-type')?.includes('application/json')) {
+            const result = await response.json();
+            if (response.status !== 200 || result.error) {
+                throw new Error(result.error || 'Gagal terhubung ke Edge Function Script.');
+            }
+        
+            const generatedText = result.script;
+            const scriptParts = generatedText.trim().split('\n\n').filter(s => s.trim() !== '');
 
-        if (scriptParts.length === 4) {
-            appState.fullScript = generatedText.trim();
-            appState.scenes.forEach((scene, index) => {
-                scene.script = scriptParts[index];
-                scene.status = 'script_ready';
-            });
+            if (scriptParts.length === 4) {
+                appState.fullScript = generatedText.trim();
+                appState.scenes.forEach((scene, index) => {
+                    scene.script = scriptParts[index];
+                    scene.status = 'script_ready';
+                });
+            } else {
+                throw new Error('Model AI tidak mengembalikan 4 bagian naskah yang terpisah.');
+            }
+            return true;
         } else {
-            throw new Error('Gemini tidak mengembalikan 4 bagian naskah yang terpisah.');
+            // Ini mungkin terjadi jika Edge Function gagal total sebelum menghasilkan JSON
+            throw new Error(`Edge Function Script mengembalikan status ${response.status}. Cek log Vercel.`);
         }
-        return true;
+
     } catch (error) {
         alert(`Gagal Generate Naskah: ${error.message}`);
         console.error('Error saat memanggil Edge Function SCRIPT:', error);
@@ -228,7 +236,7 @@ async function generateImagesFromAI() {
 }
 
 /**
- * 4.3. Generate Audio Voice Over dari TTS AI
+ * 4.3. Generate Audio Voice Over dari TTS AI (Diperbarui untuk ElevenLabs/Blob Response)
  */
 async function generateAudioFromAI() {
     generateButton.textContent = '3. Generate Audio Voice Over...';
@@ -240,13 +248,28 @@ async function generateAudioFromAI() {
             body: JSON.stringify({ fullScript: appState.fullScript }),
         });
 
-        const result = await response.json();
-
-        if (response.status !== 200 || result.error) {
-            throw new Error(result.error || 'Gagal generate audio.');
+        // --- Perubahan Penting di Sini ---
+        
+        // 1. Cek jika respons adalah JSON (berarti ERROR dari Edge Function/ElevenLabs)
+        if (response.headers.get('content-type')?.includes('application/json')) {
+            const result = await response.json();
+             // Jika status bukan 200, atau ada error di body JSON
+            if (response.status !== 200 || result.error) {
+                throw new Error(result.error || 'Gagal generate audio. Cek log Edge Function.');
+            }
+            // Jika Anda menggunakan layanan yang mengembalikan JSON dengan URL, kode lama akan bekerja di sini.
+            // Namun, karena kita menggunakan ElevenLabs, kode ini seharusnya tidak tercapai saat sukses.
+            appState.audioUrl = result.audioUrl;
+        } 
+        // 2. Jika respons adalah BINER (audio/mp3)
+        else if (response.headers.get('content-type')?.includes('audio/mp3')) {
+            const audioBlob = await response.blob(); 
+            // Buat URL lokal untuk elemen <audio>
+            appState.audioUrl = URL.createObjectURL(audioBlob); 
+        } else {
+             throw new Error(`Respons audio tidak valid (Status: ${response.status}).`);
         }
-
-        appState.audioUrl = result.audioUrl;
+        
         return true;
 
     } catch (error) {
@@ -255,6 +278,8 @@ async function generateAudioFromAI() {
         return false;
     }
 }
+// ... (Sisa fungsi 4.4, 4.5, 5.1, 5.2, 5.3, 5.4, dan 6.0 tetap sama) ...
+// =======================================================================
 
 /**
  * 4.4. Polling Hasil Video (ASINKRONUS)
@@ -340,8 +365,14 @@ async function generateBaseAssets() {
 
     // 1. Reset status sebelum memulai
     appState.scenes.forEach(s => { s.status = 'pending'; s.script = ''; s.imageUrl = null; s.videoUrl = null; });
+    
+    // Penting: Hapus Blob URL lama jika ada
+    if (appState.audioUrl) {
+        URL.revokeObjectURL(appState.audioUrl);
+    }
     appState.fullScript = '';
     appState.audioUrl = null;
+    
     renderScenes();
 
     // 2. Generate Naskah
