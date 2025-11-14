@@ -1,27 +1,24 @@
 // File: api/generate-audio.js
-// Menggunakan ElevenLabs untuk menghasilkan audio TTS.
+// Menggunakan Google Gemini untuk menghasilkan audio TTS.
 
 export const config = {
-    runtime: 'edge', 
+    runtime: 'edge',
 };
 
-// --- KONFIGURASI ELEVENLABS ---
-// Ganti dengan ID suara yang Anda pilih (misalnya, suara wanita Bahasa Indonesia)
-// Anda dapat menemukan ID suara di dasbor ElevenLabs Anda.
-const ELEVENLABS_VOICE_ID = '21m00Tcm4oosS8AJzR88'; // Contoh Voice ID
-const TTS_API_ENDPOINT = `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`;
+const GEMINI_TTS_ENDPOINT =
+    "https://generativelanguage.googleapis.com/v1beta/models/gemspeech:generateAudio?key=" + process.env.GEMINI_API_KEY;
 
 export default async function handler(request) {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Hanya metode POST yang diizinkan.' }), { status: 405 });
     }
 
-    const TTS_API_KEY = process.env.TTS_API_KEY; 
-    
-    if (!TTS_API_KEY) {
-        return new Response(JSON.stringify({ error: 'Kunci API ElevenLabs (TTS_API_KEY) tidak ditemukan.' }), { status: 500 });
+    const API_KEY = process.env.GEMINI_API_KEY;
+
+    if (!API_KEY) {
+        return new Response(JSON.stringify({ error: 'GEMINI_API_KEY tidak ditemukan.' }), { status: 500 });
     }
-    
+
     const { fullScript } = await request.json();
 
     if (!fullScript) {
@@ -29,55 +26,73 @@ export default async function handler(request) {
     }
 
     try {
-        const response = await fetch(TTS_API_ENDPOINT, {
-            method: 'POST',
+        const response = await fetch(GEMINI_TTS_ENDPOINT, {
+            method: "POST",
             headers: {
-                'Content-Type': 'application/json',
-                // Header otorisasi wajib ElevenLabs
-                'xi-api-key': TTS_API_KEY, 
-                // Accept header untuk menentukan format biner yang diharapkan
-                'Accept': 'audio/mp3' 
+                "Content-Type": "application/json",
             },
             body: JSON.stringify({
-                text: fullScript, 
-                // Gunakan model yang mendukung suara yang Anda pilih. 
-                // Model 'eleven_multilingual_v2' sering digunakan untuk Bahasa Indonesia.
-                model_id: 'eleven_multilingual_v2', 
-                voice_settings: {
-                    stability: 0.5,
-                    similarity_boost: 0.5,
+                // Text yang ingin diubah ke audio
+                input: {
+                    text: fullScript,
                 },
+                // Format audio output
+                audioConfig: {
+                    audioEncoding: "mp3",
+                    speakingRate: 1.0,
+                    pitch: 0,
+                }
             }),
         });
 
-        // --- HANDLING RESPON BINARY (MP3) ---
         if (!response.ok) {
             const errorBody = await response.json();
-            return new Response(JSON.stringify({ 
-                error: 'Gagal menghasilkan audio dari ElevenLabs.', 
-                details: errorBody.detail || 'API error',
-            }), {
-                status: response.status,
-                headers: { 'Content-Type': 'application/json' },
-            });
+            return new Response(
+                JSON.stringify({
+                    error: "Gagal menghasilkan audio dari Gemini.",
+                    details: errorBody,
+                }),
+                {
+                    status: response.status,
+                    headers: { "Content-Type": "application/json" },
+                }
+            );
         }
-        
-        // Mengembalikan respons biner (audio/mp3) langsung ke client
-        return new Response(response.body, {
+
+        const result = await response.json();
+
+        // Hasil Gemini berupa base64
+        const audioBase64 = result.audio?.data;
+
+        if (!audioBase64) {
+            return new Response(
+                JSON.stringify({ error: "Respons Gemini tidak memiliki data audio." }),
+                { status: 500 }
+            );
+        }
+
+        // Konversi menjadi buffer binary
+        const audioBuffer = Uint8Array.from(atob(audioBase64), (c) => c.charCodeAt(0));
+
+        return new Response(audioBuffer, {
             status: 200,
             headers: {
-                // Header ini PENTING agar browser tahu bahwa ini adalah file audio
-                'Content-Type': 'audio/mp3', 
-                // Memungkinkan CORS
-                'Access-Control-Allow-Origin': '*', 
+                "Content-Type": "audio/mp3",
+                "Access-Control-Allow-Origin": "*",
             },
         });
 
     } catch (error) {
-        console.error('Error saat memanggil ElevenLabs:', error);
-        return new Response(JSON.stringify({ error: 'Terjadi kesalahan internal saat memproses AI.', details: error.message }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' },
-        });
+        console.error("Error Gemini:", error);
+        return new Response(
+            JSON.stringify({
+                error: "Terjadi kesalahan internal saat memproses TTS.",
+                details: error.message,
+            }),
+            {
+                status: 500,
+                headers: { "Content-Type": "application/json" },
+            }
+        );
     }
 }
